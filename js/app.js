@@ -455,10 +455,18 @@
     }
   }
 
-  /* ---------------- market simulation ---------------- */
-  function simulateRefresh() {
+  /* ---------------- price update (manual + auto) ---------------- */
+  /* One price-check pass. In a static PWA this is a market simulation; a real
+     price feed would replace the random walk with a fetch and call
+     Store.logPrice() the same way. `opts.silent` (used by auto-update)
+     suppresses the "prices refreshed" toast but still fires target alerts. */
+  function runPriceUpdate(opts) {
+    opts = opts || {};
     var all = Store.all();
-    if (!all.length) { toast("Add a concert to track first.", "default"); return; }
+    if (!all.length) {
+      if (!opts.silent) toast("Add a concert to track first.", "default");
+      return { moved: 0, hitList: [] };
+    }
 
     var hitList = [];
     var moved = 0;
@@ -474,19 +482,110 @@
       if (res && res.crossedTarget) hitList.push({ tracker: res.tracker, price: next });
     });
 
+    setLastUpdated(Date.now());
     render();
     if (currentDetailId && !$("#detailModal").hidden) openDetail(currentDetailId);
 
+    // Target alerts always fire, auto or manual.
+    hitList.forEach(function (h) {
+      if (Notifier.permission() === "granted") Notifier.priceAlert(h.tracker, h.price, money);
+    });
+
     if (hitList.length) {
-      hitList.forEach(function (h) {
-        if (Notifier.permission() === "granted") Notifier.priceAlert(h.tracker, h.price, money);
-      });
       var first = hitList[0];
       toast("🎯 " + (hitList.length === 1
         ? first.tracker.artist + " hit your target!"
         : hitList.length + " concerts hit their targets!"), "alert", 6000);
-    } else {
+    } else if (!opts.silent) {
       toast("Prices refreshed across " + moved + " tracker" + (moved > 1 ? "s" : "") + ".", "success");
+    }
+    return { moved: moved, hitList: hitList };
+  }
+
+  function simulateRefresh() { runPriceUpdate({ silent: false }); }
+
+  /* ---------------- auto-update ---------------- */
+  var autoTimer = null;
+  var tickTimer = null;
+  var AUTO_OPTIONS = [
+    { ms: 0, label: "Off" },
+    { ms: 300000, label: "Every 5 minutes" },
+    { ms: 900000, label: "Every 15 minutes" },
+    { ms: 1800000, label: "Every 30 minutes" },
+    { ms: 3600000, label: "Every hour" }
+  ];
+
+  function getAutoInterval() { return Number(Store.settings().autoUpdate) || 0; }
+
+  function setAutoInterval(ms) {
+    var s = Store.settings();
+    s.autoUpdate = ms;
+    Store.saveSettings(s);
+    applyAutoUpdate();
+    if (ms > 0) {
+      toast("Auto-update on · " + relativeInterval(ms) + ".", "success");
+      // Prompt for notifications so alerts can reach the user.
+      if (Notifier.permission() === "default") enableNotifications();
+    } else {
+      toast("Auto-update turned off.", "default");
+    }
+  }
+
+  function applyAutoUpdate() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    var ms = getAutoInterval();
+    updateBar();
+    if (ms > 0) {
+      autoTimer = setInterval(function () { runPriceUpdate({ silent: true }); }, ms);
+      // Catch up if it's been longer than the interval since the last check.
+      var last = Store.settings().lastUpdated || 0;
+      if (Date.now() - last > ms) {
+        setTimeout(function () { runPriceUpdate({ silent: true }); }, 2500);
+      }
+    }
+  }
+
+  function setLastUpdated(ts) {
+    var s = Store.settings();
+    s.lastUpdated = ts;
+    Store.saveSettings(s);
+    updateBar();
+  }
+
+  function relativeInterval(ms) {
+    if (ms >= 3600000) return "every hour";
+    return "every " + Math.round(ms / 60000) + " min";
+  }
+
+  function relativeTime(ts) {
+    if (!ts) return "not yet";
+    var s = Math.round((Date.now() - ts) / 1000);
+    if (s < 45) return "just now";
+    if (s < 90) return "1 min ago";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    if (s < 5400) return "1 hour ago";
+    if (s < 86400) return Math.round(s / 3600) + " hours ago";
+    return Math.round(s / 86400) + " days ago";
+  }
+
+  /* Live status line under the toolbar. */
+  function updateBar() {
+    var bar = $("#updateBar");
+    if (!bar) return;
+    var ms = getAutoInterval();
+    var last = Store.settings().lastUpdated || 0;
+    if (!Store.all().length) { bar.hidden = true; return; }
+    bar.hidden = false;
+    if (ms > 0) {
+      bar.innerHTML =
+        "<span class='dot'></span><b>Auto-updating</b> · " + relativeInterval(ms) +
+        " · <span class='muted'>checked " + relativeTime(last) + "</span>";
+      bar.classList.add("on");
+    } else {
+      bar.classList.remove("on");
+      bar.innerHTML = last
+        ? "<span class='muted'>Prices checked " + relativeTime(last) + " · turn on auto-update in settings ⚙</span>"
+        : "<span class='muted'>Tip: turn on auto-update in settings to check prices automatically ⚙</span>";
     }
   }
 
@@ -618,8 +717,19 @@
 
     $("#themeToggle").addEventListener("click", toggleTheme);
     $("#settingsBtn").addEventListener("click", function () {
-      $("#aboutMeta").textContent = "Encore · v1.0 · " + Store.all().length + " trackers stored locally.";
+      $("#aboutMeta").textContent = "Encore · v1.1 · " + Store.all().length + " trackers stored locally.";
+      $("#autoUpdateSelect").value = String(getAutoInterval());
       openModal($("#settingsModal"));
+    });
+
+    // Auto-update selector.
+    var autoSel = $("#autoUpdateSelect");
+    autoSel.innerHTML = AUTO_OPTIONS.map(function (o) {
+      return "<option value='" + o.ms + "'>" + o.label + "</option>";
+    }).join("");
+    autoSel.value = String(getAutoInterval());
+    autoSel.addEventListener("change", function (e) {
+      setAutoInterval(Number(e.target.value));
     });
 
     $("#notifEnable").addEventListener("click", enableNotifications);
@@ -634,6 +744,7 @@
       closeModal($("#settingsModal"));
       toast("Sample concerts loaded.", "success");
       render();
+      updateBar();
     });
     $("#clearBtn").addEventListener("click", function () {
       if (confirm("Remove all trackers from this device? This can't be undone.")) {
@@ -642,6 +753,7 @@
         toast("All trackers cleared.", "default");
         render();
         refreshNotifState();
+        updateBar();
       }
     });
 
@@ -658,11 +770,43 @@
 
     render();
     refreshNotifState();
+    applyAutoUpdate();
 
-    // Register service worker.
+    // Keep the "checked N min ago" label live.
+    tickTimer = setInterval(updateBar, 30000);
+    // Re-check the moment the app regains focus after being backgrounded.
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState !== "visible") return;
+      updateBar();
+      var ms = getAutoInterval();
+      var last = Store.settings().lastUpdated || 0;
+      if (ms > 0 && Date.now() - last > ms) runPriceUpdate({ silent: true });
+    });
+
+    // Register service worker + auto-refresh when a new version is deployed.
     if ("serviceWorker" in navigator) {
+      var hadController = !!navigator.serviceWorker.controller;
       window.addEventListener("load", function () {
-        navigator.serviceWorker.register("sw.js").catch(function () {});
+        navigator.serviceWorker.register("sw.js").then(function (reg) {
+          reg.addEventListener("updatefound", function () {
+            var nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener("statechange", function () {
+              if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                toast("Updating to the latest version…", "success", 2500);
+              }
+            });
+          });
+          // Check for a newer app version periodically.
+          setInterval(function () { reg.update(); }, 3600000);
+        }).catch(function () {});
+      });
+      // When the fresh service worker takes control, reload once to apply it.
+      var reloaded = false;
+      navigator.serviceWorker.addEventListener("controllerchange", function () {
+        if (reloaded || !hadController) return;
+        reloaded = true;
+        window.location.reload();
       });
     }
   }

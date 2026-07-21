@@ -1,7 +1,7 @@
 /* ============================================================
    Encore — service worker (offline app shell)
    ============================================================ */
-var CACHE = "encore-v1";
+var CACHE = "encore-v2";
 var ASSETS = [
   "./",
   "index.html",
@@ -54,6 +54,11 @@ self.addEventListener("fetch", function (e) {
       });
     })
   );
+});
+
+/* Allow the page to activate a waiting worker immediately. */
+self.addEventListener("message", function (e) {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 /* Clicking a price alert focuses / opens the app. */

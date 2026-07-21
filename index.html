@@ -106,6 +106,9 @@
       </div>
     </section>
 
+    <!-- Live auto-update status -->
+    <div class="updatebar" id="updateBar" hidden></div>
+
     <!-- Tracker grid -->
     <section class="grid" id="grid" aria-live="polite"></section>
 
@@ -243,8 +246,15 @@
         </div>
         <div class="settings__row">
           <div>
+            <strong>Auto-update prices</strong>
+            <span>Automatically check prices on a schedule while Encore is open, and alert you when a target is hit — no manual refresh needed.</span>
+          </div>
+          <select id="autoUpdateSelect" class="select" aria-label="Auto-update interval"></select>
+        </div>
+        <div class="settings__row">
+          <div>
             <strong>Market simulation</strong>
-            <span>Encore is a static PWA. Use “Refresh” to simulate live price movement and demo alerts.</span>
+            <span>Encore is a static PWA, so updates simulate live price movement. A real price feed would slot into the same update path.</span>
           </div>
         </div>
         <div class="settings__row">
