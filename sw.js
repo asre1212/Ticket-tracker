@@ -1,7 +1,7 @@
 /* ============================================================
    Encore — service worker (offline app shell)
    ============================================================ */
-var CACHE = "encore-v2";
+var CACHE = "encore-v3";
 var ASSETS = [
   "./",
   "index.html",
@@ -28,7 +28,7 @@ self.addEventListener("activate", function (e) {
   e.waitUntil(
     caches.keys().then(function (keys) {
       return Promise.all(keys.map(function (k) {
-        if (k !== CACHE) return caches.delete(k);
+        if (k.indexOf("encore-") === 0 && k !== CACHE) return caches.delete(k);
       }));
     }).then(function () { return self.clients.claim(); })
   );
