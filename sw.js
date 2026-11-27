@@ -1,7 +1,7 @@
 /* ============================================================
    Encore — service worker (offline app shell)
    ============================================================ */
-var CACHE = "encore-v4";
+var CACHE = "encore-v5";
 var ASSETS = [
   "./",
   "index.html",
