@@ -1,12 +1,13 @@
 /* ============================================================
    Encore — service worker (offline app shell)
    ============================================================ */
-var CACHE = "encore-v3";
+var CACHE = "encore-v4";
 var ASSETS = [
   "./",
   "index.html",
   "css/style.css",
   "js/store.js",
+  "js/auto-backup.js",
   "js/notifications.js",
   "js/app.js",
   "manifest.webmanifest",

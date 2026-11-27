@@ -716,6 +716,8 @@
     });
 
     $("#themeToggle").addEventListener("click", toggleTheme);
+    $("#autoBackupBtn").addEventListener("click",function(){closeModal($("#settingsModal"));Store.openAutoBackup();});
+    document.addEventListener("encore-backup-restored",function(){render();refreshNotifState();updateBar();});
     $("#settingsBtn").addEventListener("click", function () {
       $("#aboutMeta").textContent = "Encore · v1.1 · " + Store.all().length + " trackers stored locally.";
       $("#autoUpdateSelect").value = String(getAutoInterval());
