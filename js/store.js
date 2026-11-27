@@ -20,15 +20,41 @@
     }
   }
 
+  var trackerBackup=AutoBackup.create({
+    id:"encore-ticket-tracker",name:"Encore",read:load,
+    validate(rows){
+      if(!Array.isArray(rows)||rows.length>20000)throw new Error("Invalid tracker backup.");
+      const ids=new Set(), strings=["artist","date","venue","city","platform","section","currency","url"];
+      return rows.map(r=>{
+        if(!r||typeof r.id!=="string"||!/^[a-z0-9_-]{1,80}$/i.test(r.id)||ids.has(r.id)||!Number.isFinite(r.createdAt)||
+           strings.some(k=>typeof r[k]!=="string"||r[k].length>4096)||
+           (r.targetPrice!==null&&!Number.isFinite(r.targetPrice))||!Array.isArray(r.history))throw new Error("A tracker could not be validated.");
+        if(r.url&&!/^https?:\/\//i.test(r.url))throw new Error("A tracker has an unsupported link.");
+        ids.add(r.id);
+        const history=r.history.map(h=>{
+          if(!h||!Number.isFinite(h.ts)||!Number.isFinite(h.price)||typeof h.platform!=="string"||h.platform.length>4096)throw new Error("A saved price could not be validated.");
+          return {ts:h.ts,price:h.price,platform:h.platform};
+        });
+        return {id:r.id,...Object.fromEntries(strings.map(k=>[k,r[k]])),targetPrice:r.targetPrice,createdAt:r.createdAt,history};
+      });
+    },
+    apply(rows){
+      localStorage.setItem(KEY,JSON.stringify(rows));
+      document.dispatchEvent(new Event("encore-backup-restored"));
+      return true;
+    }
+  });
   function persist(list) {
     try {
       localStorage.setItem(KEY, JSON.stringify(list));
+      trackerBackup.capture(list);
     } catch (e) {
       /* storage full / unavailable */
     }
   }
 
   var Store = {
+    openAutoBackup: trackerBackup.open,
     all: function () {
       return load().sort(function (a, b) {
         return (b.createdAt || 0) - (a.createdAt || 0);
@@ -118,6 +144,7 @@
 
     clearAll: function () {
       localStorage.removeItem(KEY);
+      trackerBackup.capture([]);
     },
 
     /* ---- derived helpers ---- */
